@@ -47,23 +47,96 @@ if (size(b, 2) ~= 1)
     error("Only a single right hand side is supported!");
 end
 
+n = size(A,1);
+
 vector_size = size(b);
 x = x_init;
-flag = False;
+flag = false;
 residual = A*x - b;
 residual_norm = norm(residual);
 b_norm = norm(b);
 relres = residual_norm/b_norm;
-iter = 0;
 
-residual_norm_collection = zeros(restart+1, 1);
-residual_norm_collection(1) = residual_norm;
-krylov_bases = zeros(restart+1, vector_size(1));
-y = zeros(restart, 1);
-next_krylov_basis = zeros(size(b)); % Later turned to lower precision
+iter = 0; % global iteration count
+local_iter = 0; % Iteration count since the last reset
+
+[residual_norm, residual_norm_collection, krylov_bases, next_krylov_basis] = initialize_2(residual, restart);
+
 hessenberg = zeros(restart + 1, restart);
 givens_sin = zeros(restart, 1);
 givens_cos = zeros(restart, 1);
-arnoldi_norm = 0.0;
 
+perform_reset = true;
+%perform_reset = false;
+
+while (true)
+    if (iter == restart || perform_reset)
+        % View not necessary because bounds are manually controlled
+        %hessenberg_view = hessenberg(:, 1:local_iter);
+        before_precond = step_2(residual_norm_collection, krylov_bases, hessenberg, local_iter);
+        x = x + M * before_precond;
+        residual = b - A*x;
+        [residual_norm, residual_norm_collection, krylov_bases, next_krylov_basis] = initialize_2(residual, restart);
+        local_iter = 0;
+    end
+    precond_vec = M * next_krylov_basis;
+    
+    % finish_arnoldi_CGS
+    [next_krylov_basis, krylov_bases, hessenberg] = finish_arnoldi_CGS(next_krylov_basis, krylov_bases, hessenberg, local_iter);
+    % givens_rotation
+    % calculate_next_residual_norm
+    %break
+    iter = iter + 1;
+    local_iter = local_iter + 1;
+end
+end
+
+
+function before_precond = step_2(residual_norm_collection, krylov_bases, hessenberg, local_iter)
+%TODO write in simpler terms!
+%solve_upper_triangular
+y = zeros(local_iter, 1);
+for i=local_iter:-1:1 % +1 since indices start at 1
+    tmp = residual_norm_collection(i);
+    for j=i+1:local_iter-1
+        tmp = tmp - hessenberg(i, j) * y(j);
+    end
+    y(i) = tmp / hessenberg(i, i);
+end
+
+%calculate_qy
+before_precond = krylov_bases(:, 1:local_iter) * y;
+% before_precond = zeros(size(krylov_bases, 1), 1);
+% for i=1:size(before_precond,1)
+%     for j=1:local_iter
+%         before_precond(i) = before_precond(i) + krylov_bases(i, j) * y(j);
+%     end
+% end
+end
+
+function [residual_norm, residual_norm_collection, krylov_bases, next_krylov_basis] = initialize_2(residual, restart)
+n = size(residual, 1);
+residual_norm = norm(residual);
+residual_norm_collection = zeros(restart + 1, 1);
+residual_norm_collection(1) = residual_norm;
+krylov_bases = zeros(n, restart+1);  % Transposed from Ginkgo storage
+next_krylov_basis = (1/residual_norm) * residual;
+end
+
+function [next_krylov_basis, krylov_bases, hessenberg] = finish_arnoldi_CGS(next_krylov_basis, krylov_bases, hessenberg, local_iter)
+eta = 1/sqrt(2);
+old_arnoldi_norm = eta * norm(next_krylov_basis);
+hessenberg_iter = zeros(local_iter + 1, 1);
+hessenberg_iter = transpose(krylov_bases(:, 1:local_iter+1)) * next_krylov_basis;
+
+next_krylov_basis = next_krylov_basis - krylov_bases(:, 1:local_iter+1) * hessenberg_iter;
+arnoldi_norm = norm(next_krylov_basis);
+
+% TODO add re-orthogonalization
+
+arnoldi_norm = norm(next_krylov_basis);
+hessenberg(1:local_iter+1, local_iter + 1) = hessenberg_iter;
+hessenberg(local_iter + 2, local_iter + 1) = arnoldi_norm;
+next_krylov_basis = (1/arnoldi_norm) * next_krylov_basis;
+krylov_bases(:, local_iter + 2) = next_krylov_basis;
 end
