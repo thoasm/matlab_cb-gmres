@@ -1,4 +1,4 @@
-function [x,flag,relres,iter] = cb_gmres(A, b, x_init, restart, tol, maxit, reduce_precision, M)
+function [x,flag,relres,iter,resvec] = cb_gmres(A, b, x_init, restart, tol, maxit, reduce_precision, M)
 %CB_GMRES   Compressed-Basis GMRES (Generalized Minimum Residual Method)
 %   X = CB_GMRES(A,B) attempts to solve the system of linear equations
 %   A*X=B for X. The N-by-N coefficient matrix A must be square and the
@@ -35,6 +35,9 @@ function [x,flag,relres,iter] = cb_gmres(A, b, x_init, restart, tol, maxit, redu
 %
 %   [X,FLAG,RELRES,ITER] = CB_GMRES(A,B,...) also returns the total number
 %   of iterations the alrorithm was run.
+%
+%   [X,FLAG,RELRES,ITER,RESVEC] = CB_GMRES(A,B,...) also returns a vector of
+%   the residual norms at each inner iteration.
 %
 %   This is a Matlab implementation of the CB-GMRES algorithm used in the
 %   sparse linear algebra library Ginkgo. If performance is your priority,
@@ -107,19 +110,18 @@ hessenberg = zeros(restart + 1, restart);
 givens_sin = zeros(restart, 1);
 givens_cos = zeros(restart, 1);
 
-%perform_reset = true;
-perform_reset = false;
+resvec=zeros(maxit, 1); % pre-allocation
 
 while (true)
     if (relres < tol)
         flag = true;
         break;
-    elseif (iter > maxit)
+    elseif (iter >= maxit)
         flag = false;
         break;
     end
 
-    if (local_iter == restart || perform_reset)
+    if (local_iter == restart)
         before_precond = ...
             step_2(residual_norm_collection, krylov_bases, hessenberg, local_iter);
         x = x + M * before_precond;
@@ -146,11 +148,15 @@ while (true)
 
     iter = iter + 1;
     local_iter = local_iter + 1;
+    resvec(iter,1) = residual_norm;
 end
 
 before_precond = ...
     step_2(residual_norm_collection, krylov_bases, hessenberg, local_iter);
 x = x + M * before_precond;
+
+% Remove unnecessary zeros from resvec
+resvec = resvec(1:iter, 1);
 
 end
 
@@ -171,8 +177,12 @@ function [residual_norm, residual_norm_collection, krylov_bases, next_krylov_bas
     residual_norm = norm(residual);
     residual_norm_collection = zeros(restart + 1, 1);
     residual_norm_collection(1) = residual_norm;
+    % krylov_bases will always be stored as double precision values
     krylov_bases = zeros(n, restart+1);  % Transposed from Ginkgo storage
     if (reduce_precision)
+        % here, we basically write single precision values into the krylov
+        % basis, so we compute in double precision while having single
+        % precision value accuracy
         krylov_bases(:, 1) = single((1/residual_norm) *residual);
     else
         krylov_bases(:, 1) = (1/residual_norm) *residual;
@@ -208,6 +218,9 @@ function [next_krylov_basis, krylov_bases, hessenberg] = ...
     hessenberg(local_iter + 2, local_iter + 1) = arnoldi_norm;
     next_krylov_basis = (1/arnoldi_norm) * next_krylov_basis;
     if (reduce_precision)
+        % here, we write single precision values into the krylov basis
+        % (which are double precison values themselves), so we compute in
+        % double precision while having single precision value accuracy
         krylov_bases(:, local_iter + 2) = single(next_krylov_basis);
     else
         krylov_bases(:, local_iter + 2) = next_krylov_basis;
@@ -254,7 +267,7 @@ function print_matrix(str, mtx)
     disp(mtx)
 end
 
-% Change format to show more digits: `format long`
+% Change format to show more digits: `format long` (`format longe` for scientific)
 % Show current format: `fmt = format`
 % `single(x)` cast x to single precision
 % `double(x)` cast x to double precision
