@@ -62,8 +62,8 @@ elseif (size(x_init) ~= size(b))
 end
 if (nargin < 4 || isempty(restart))
     restart = size(A, 1);
-elseif (restart > size(A, 1))
-    error("Restart must not be larger than the number of rows of A!");
+%elseif (restart > size(A, 1))
+%    error("Restart must not be larger than the number of rows of A!");
 end
 if (nargin < 5 || isempty(tol))
     tol = 1e-6;
@@ -110,7 +110,8 @@ hessenberg = zeros(restart + 1, restart);
 givens_sin = zeros(restart, 1);
 givens_cos = zeros(restart, 1);
 
-resvec=zeros(maxit, 1); % pre-allocation
+resvec=zeros(maxit+1, 1); % pre-allocation
+resvec(1) = residual_norm;
 
 while (true)
     if (relres < tol)
@@ -148,7 +149,7 @@ while (true)
 
     iter = iter + 1;
     local_iter = local_iter + 1;
-    resvec(iter,1) = residual_norm;
+    resvec(iter+1,1) = residual_norm;
 end
 
 before_precond = ...
@@ -156,7 +157,7 @@ before_precond = ...
 x = x + M * before_precond;
 
 % Remove unnecessary zeros from resvec
-resvec = resvec(1:iter, 1);
+resvec = resvec(1:iter+1, 1);
 
 end
 
