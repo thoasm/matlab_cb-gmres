@@ -20,8 +20,10 @@ function [x,flag,relres,iter,resvec] = cb_gmres(A, b, x_init, restart, tol, maxi
 %   iterations). Default value is RESTART.
 %
 %   X = CB_GMRES(A,B,X_INIT,RESTART,TOL,MAXIT,REDUCE_PRECISION) specifies
-%   weather the Krylov bases should be stored in reduced precision. Default
-%   is true.
+%   weather the Krylov bases (first element) or all inner GMRES elements
+%   (second element) should be stored in reduced precision. If the first
+%   element is false, the second is always interpreted as false.
+%   Default is [true, false].
 %
 %   X = CB_GMRES(A,B,X_INIT,RESTART,TOL,MAXIT,REDUCE_PRECISION, M)
 %   specifies the preconditioner M used to effectively solve the system
@@ -72,9 +74,11 @@ if (nargin < 6 || isempty(maxit))
     maxit = restart;
 end
 if (nargin < 7 || isempty(reduce_precision))
-    reduce_precision = true;
+    reduce_precision = [true, false];
 elseif (~islogical(reduce_precision))
     error("reduce_precision must be a boolean!");
+elseif (size(reduce_precision, 2) < 2)
+    reduce_precision = [reduce_precision false];
 end
 if (nargin < 8)
     M = eye(size(A));
@@ -106,9 +110,9 @@ local_iter = 0; % Iteration count since the last reset
     initialize_2(residual, restart, reduce_precision);
 relres = residual_norm/b_norm;
 
-hessenberg = zeros(restart + 1, restart);
-givens_sin = zeros(restart, 1);
-givens_cos = zeros(restart, 1);
+hessenberg = convert_precision(zeros(restart + 1, restart), reduce_precision);
+givens_sin = convert_precision(zeros(restart, 1), reduce_precision);
+givens_cos = convert_precision(zeros(restart, 1), reduce_precision);
 
 resvec=zeros(maxit+1, 1); % pre-allocation
 resvec(1) = residual_norm;
@@ -163,11 +167,12 @@ end
 
 
 function before_precond = step_2(residual_norm_collection, krylov_bases, hessenberg, local_iter)
+    % Force y and before_precond to always be double precision!
     %solve_upper_triangular
-    y = hessenberg(1:local_iter, 1:local_iter) \ residual_norm_collection(1:local_iter);
+    y = double(hessenberg(1:local_iter, 1:local_iter)) \ residual_norm_collection(1:local_iter);
     
     %calculate_qy
-    before_precond = krylov_bases(:, 1:local_iter) * y;
+    before_precond = double(krylov_bases(:, 1:local_iter)) * y;
 end
 
 
@@ -178,17 +183,15 @@ function [residual_norm, residual_norm_collection, krylov_bases, next_krylov_bas
     residual_norm = norm(residual);
     residual_norm_collection = zeros(restart + 1, 1);
     residual_norm_collection(1) = residual_norm;
-    % krylov_bases will always be stored as double precision values
-    krylov_bases = zeros(n, restart+1);  % Transposed from Ginkgo storage
-    if (reduce_precision)
-        % here, we basically write single precision values into the krylov
-        % basis, so we compute in double precision while having single
-        % precision value accuracy
-        krylov_bases(:, 1) = single((1/residual_norm) *residual);
-    else
-        krylov_bases(:, 1) = (1/residual_norm) *residual;
-    end
-    next_krylov_basis = (1/residual_norm) * residual;
+    
+    % krylov_bases will be stored in single precision if computations are
+    % supposed to happen in single precision, otherwise, it will be double
+    % precision
+    krylov_bases = convert_precision(zeros(n, restart+1), reduce_precision);  % Transposed from Ginkgo storage
+    % here, we basically write single precision values into the krylov
+    % basis (if reduce_precision(1) is true)
+    krylov_bases(:, 1) = convert_precision((1/residual_norm) *residual, reduce_precision(1));
+    next_krylov_basis = convert_precision((1/residual_norm) * residual, reduce_precision);
 end
 
 
@@ -218,14 +221,13 @@ function [next_krylov_basis, krylov_bases, hessenberg] = ...
     hessenberg(1:local_iter+1, local_iter + 1) = hessenberg_iter;
     hessenberg(local_iter + 2, local_iter + 1) = arnoldi_norm;
     next_krylov_basis = (1/arnoldi_norm) * next_krylov_basis;
-    if (reduce_precision)
-        % here, we write single precision values into the krylov basis
-        % (which are double precison values themselves), so we compute in
-        % double precision while having single precision value accuracy
-        krylov_bases(:, local_iter + 2) = single(next_krylov_basis);
-    else
-        krylov_bases(:, local_iter + 2) = next_krylov_basis;
-    end
+    % Here, we write single precision values into the krylov basis IF the
+    % reduce_precision(1) is set. krylov_bases might be in single or double
+    % precision depending on the full vector of reduce_precision.
+    % If reduce_precision == [true, false], we write single precision
+    % values into a double precision matrix, resulting in single precision
+    % accuracy while arithmetic operations happen in doulbe precision
+    krylov_bases(:, local_iter + 2) = convert_precision(next_krylov_basis, reduce_precision(1));
 end
 
 
@@ -266,6 +268,15 @@ end
 function print_matrix(str, mtx)
     fprintf("%s\n", str)
     disp(mtx)
+end
+
+
+function [converted] = convert_precision(value, to_single)
+    if (to_single)
+        converted = single(value);
+    else
+        converted = value;
+    end
 end
 
 % Change format to show more digits: `format long` (`format longe` for scientific)
