@@ -61,11 +61,11 @@ end
 
 [fig, ax] = ...
     plot_helper(relres(:, 1), relres(:, 2), relres(:, 3), relres(:, 4), ...
-        append("Final relres norm for Rest: ", string(restart), ", Maxint: ", string(maxit)));
+        append("Final relres norm for Rest: ", string(restart), ", Maxit: ", string(maxit)));
 print_figure(fig, append(output_folder, "final_relres_norms_r", string(restart), "_m", string(maxit)));
 [fig, ax] = ...
     plot_helper(back_relres(:, 1), back_relres(:, 2), back_relres(:, 3), back_relres(:, 4), ...
-        append("Final backwards error for Rest: ", string(restart), ", Maxint: ", string(maxit)));
+        append("Final backwards error for Rest: ", string(restart), ", Maxit: ", string(maxit)));
 print_figure(fig, append(output_folder, "final_backward_error_r", string(restart), "_m", string(maxit)));
 
 [fig, ax] = plot_helper(kappa, [], [], [], append("Kappa value per iteration"), false);

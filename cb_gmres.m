@@ -207,7 +207,7 @@ function [next_krylov_basis, krylov_bases, hessenberg] = ...
     arnoldi_norm = norm(next_krylov_basis);
     
     % Our re-orthogonalization in this loop
-    for l=1:3
+    for l=1:2
         if (arnoldi_norm < old_arnoldi_norm)
             break;
         end
